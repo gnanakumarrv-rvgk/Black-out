@@ -1,0 +1,6 @@
+{
+  "name": "Blackout Audio",
+  "description": "Turns off the screen with a black, touch-blocking overlay while playing YouTube or other videos in the background using face-down sensor detection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

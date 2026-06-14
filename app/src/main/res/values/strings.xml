@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Blackout Audio</string>
+    <string name="notification_channel_name">Blackout Active Service</string>
+    <string name="notification_channel_desc">Maintains background sensor listener and overlay manager.</string>
+    <string name="notification_title">Blackout Service Running</string>
+    <string name="notification_text_face_up">Detecting face-down orientation…</string>
+    <string name="notification_text_blackout">Blackout Active • Tap/Turn face-up to awaken</string>
+    <string name="button_stop_service">Stop Service</string>
+</resources>
