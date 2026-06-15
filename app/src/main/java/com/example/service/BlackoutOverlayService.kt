@@ -52,6 +52,9 @@ class BlackoutOverlayService : Service(), SensorEventListener, SharedPreferences
         const val KEY_SHOW_FLOATING_SHORTCUT = "key_show_floating_shortcut_v2"
         const val KEY_FLOATING_SHORTCUT_OPACITY = "key_floating_shortcut_opacity_v2"
         const val DEFAULT_FLOATING_SHORTCUT_OPACITY = 0.35f
+        const val KEY_LOCK_MODE_TRANSPARENT = "key_lock_mode_transparent_v2"
+        const val KEY_THEME_MODE = "key_theme_mode_v2"
+        const val KEY_CUSTOM_THEME_COLOR = "key_custom_theme_color_v2"
 
         const val ACTION_START = "action_start_service"
         const val ACTION_STOP = "action_stop_service"
@@ -77,6 +80,9 @@ class BlackoutOverlayService : Service(), SensorEventListener, SharedPreferences
     private var isBlackedOut = false
     private var isMonitoring = false
     private var isManuallyForced = false
+    private var lastTriggerState = false
+    private var useTransparentLock = true
+    private var customThemeColorInt = 0xFFD0BCFF.toInt()
 
     private var useProximity = true
     private var useAccel = true
@@ -110,6 +116,8 @@ class BlackoutOverlayService : Service(), SensorEventListener, SharedPreferences
         accelThreshold = prefs.getFloat(KEY_ACCEL_THRESHOLD, DEFAULT_ACCEL_THRESHOLD)
         showFloatingShortcut = prefs.getBoolean(KEY_SHOW_FLOATING_SHORTCUT, false)
         floatingShortcutOpacity = prefs.getFloat(KEY_FLOATING_SHORTCUT_OPACITY, DEFAULT_FLOATING_SHORTCUT_OPACITY)
+        useTransparentLock = prefs.getBoolean(KEY_LOCK_MODE_TRANSPARENT, true)
+        customThemeColorInt = prefs.getInt(KEY_CUSTOM_THEME_COLOR, 0xFFD0BCFF.toInt())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -125,6 +133,7 @@ class BlackoutOverlayService : Service(), SensorEventListener, SharedPreferences
         if (action == ACTION_FORCE_BLACKOUT_TOGGLE) {
             if (isBlackedOut) {
                 dismissOverlay()
+                pauseMonitoringTemporarily()
             } else {
                 isManuallyForced = true
                 showOverlay()
@@ -210,7 +219,7 @@ class BlackoutOverlayService : Service(), SensorEventListener, SharedPreferences
             }
         }
 
-        if (changed || isBlackedOut) {
+        if (changed || (!isBlackedOut && event.sensor.type == Sensor.TYPE_ACCELEROMETER)) {
             evaluateTrigger()
             broadcastStatus()
         }
@@ -219,12 +228,22 @@ class BlackoutOverlayService : Service(), SensorEventListener, SharedPreferences
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun evaluateTrigger() {
-        if (isManuallyForced) return
         val trigger = when {
             useAccel && useProximity -> isFaceDown && isNearBox
             useAccel -> isFaceDown
             useProximity -> isNearBox
             else -> false
+        }
+
+        // Active physical transition from active physical lock to unlocked state resets manual override!
+        if (lastTriggerState && !trigger) {
+            isManuallyForced = false
+        }
+        lastTriggerState = trigger
+
+        if (isManuallyForced) {
+            showOverlay()
+            return
         }
 
         if (trigger) {
@@ -256,31 +275,59 @@ class BlackoutOverlayService : Service(), SensorEventListener, SharedPreferences
                             or WindowManager.LayoutParams.FLAG_FULLSCREEN
                             or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     format = PixelFormat.TRANSLUCENT
-                    screenBrightness = 0.01f
+                    screenBrightness = if (useTransparentLock) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else 0.01f
                     gravity = Gravity.CENTER
                 }
 
                 val frame = FrameLayout(this).apply {
-                    setBackgroundColor(Color.BLACK)
+                    if (useTransparentLock) {
+                        setBackgroundColor(Color.argb(1, 0, 0, 0)) // Highly transparent touch inhibitor
+                    } else {
+                        setBackgroundColor(Color.BLACK)
+                    }
                     isClickable = true
                     isFocusable = true
                 }
 
-                val text = TextView(this).apply {
-                    setText("Blackout Screen Enabled\nDouble tap screen to unlock")
-                    setTextColor(Color.parseColor("#35D0BCFF"))
-                    textSize = 15f
-                    gravity = Gravity.CENTER
-                    val paddingDp = (16 * resources.displayMetrics.density).toInt()
-                    setPadding(paddingDp, 0, paddingDp, 0)
-                }
+                if (!useTransparentLock) {
+                    val text = TextView(this).apply {
+                        setText("Blackout Screen Enabled\nDouble tap screen to unlock")
+                        val alphaColor = (customThemeColorInt and 0x00FFFFFF) or 0x3F000000
+                        setTextColor(alphaColor)
+                        textSize = 15f
+                        gravity = Gravity.CENTER
+                        val paddingDp = (16 * resources.displayMetrics.density).toInt()
+                        setPadding(paddingDp, 0, paddingDp, 0)
+                    }
 
-                val textParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER
-                )
-                frame.addView(text, textParams)
+                    val textParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.CENTER
+                    )
+                    frame.addView(text, textParams)
+                } else {
+                    // Sleek, minimal toast-styled lock indicator at the top margin (so video is completely visible)
+                    val pill = TextView(this).apply {
+                        text = "🔒 Touch Locked (Double-tap to unlock)"
+                        setTextColor(Color.parseColor("#D9FFFFFF"))
+                        textSize = 11f
+                        gravity = Gravity.CENTER
+                        setBackgroundResource(android.R.drawable.toast_frame)
+                        background?.alpha = 130
+                        val hPad = (12 * resources.displayMetrics.density).toInt()
+                        val vPad = (6 * resources.displayMetrics.density).toInt()
+                        setPadding(hPad, vPad, hPad, vPad)
+                    }
+                    val pillParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                    ).apply {
+                        topMargin = (24 * resources.displayMetrics.density).toInt()
+                    }
+                    frame.addView(pill, pillParams)
+                }
 
                 val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
                     override fun onDoubleTap(e: MotionEvent): Boolean {
@@ -474,6 +521,20 @@ class BlackoutOverlayService : Service(), SensorEventListener, SharedPreferences
         } else if (key == KEY_SHOW_FLOATING_SHORTCUT || key == KEY_FLOATING_SHORTCUT_OPACITY) {
             loadPreferences()
             updateFloatingShortcutVisibility()
+        } else if (key == KEY_LOCK_MODE_TRANSPARENT) {
+            loadPreferences()
+            if (isBlackedOut) {
+                dismissOverlay()
+                showOverlay()
+            }
+        } else if (key == KEY_CUSTOM_THEME_COLOR) {
+            loadPreferences()
+            if (isBlackedOut) {
+                dismissOverlay()
+                showOverlay()
+            }
+            removeFloatingShortcutView()
+            updateFloatingShortcutVisibility()
         }
     }
 
@@ -522,15 +583,17 @@ class BlackoutOverlayService : Service(), SensorEventListener, SharedPreferences
 
             val circleDrawable = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(Color.parseColor("#1C1B1F"))
-                setStroke((2 * resources.displayMetrics.density).toInt(), Color.parseColor("#AC8EFF"))
+                setColor(Color.parseColor("#141519"))
+                setStroke((2 * resources.displayMetrics.density).toInt(), customThemeColorInt)
             }
             frame.background = circleDrawable
 
-            val iconView = TextView(this).apply {
-                text = "📴"
-                textSize = 20f
-                gravity = Gravity.CENTER
+            val iconView = android.widget.ImageView(this).apply {
+                setImageResource(R.drawable.ic_launcher_foreground)
+                val paddingPx = (6 * resources.displayMetrics.density).toInt()
+                setPadding(paddingPx, paddingPx, paddingPx, paddingPx)
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                contentDescription = "Double tap to toggle overlay"
             }
             frame.addView(iconView, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -601,6 +664,7 @@ class BlackoutOverlayService : Service(), SensorEventListener, SharedPreferences
     private fun toggleManualBlackout() {
         if (isBlackedOut) {
             dismissOverlay()
+            pauseMonitoringTemporarily()
         } else {
             isManuallyForced = true
             showOverlay()

@@ -16,6 +16,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,6 +52,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import android.graphics.Color as AndroidColor
+import kotlin.math.atan2
+import kotlin.math.sqrt
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -218,16 +230,27 @@ fun MainScreen(viewModel: BlackoutViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (selectedTab) {
-                0 -> OverviewTab(viewModel) {
+            if (selectedTab == 0) {
+                OverviewTab(viewModel) {
                     if (!checkOverlayPermission()) {
                         showPermissionDialog = true
                     } else {
                         viewModel.toggleService()
                     }
                 }
-                1 -> BrowserTab(viewModel)
-                2 -> LogsTab(viewModel)
+            }
+            
+            // Continuous persistent browser layout to preserve WebView and background playback state during tab swaps
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .offset(x = if (selectedTab == 1) 0.dp else 2000.dp)
+            ) {
+                BrowserTab(viewModel)
+            }
+            
+            if (selectedTab == 2) {
+                LogsTab(viewModel)
             }
         }
     }
@@ -298,6 +321,9 @@ fun OverviewTab(
     val accelThreshold by viewModel.accelThreshold.collectAsStateWithLifecycle()
     val showFloatingShortcut by viewModel.showFloatingShortcut.collectAsStateWithLifecycle()
     val floatingShortcutOpacity by viewModel.floatingShortcutOpacity.collectAsStateWithLifecycle()
+    val useTransparentLock by viewModel.useTransparentLock.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val customThemeColor by viewModel.customThemeColor.collectAsStateWithLifecycle()
 
     val scale by animateFloatAsState(
         targetValue = if (isMonitoring) 1.05f else 1f,
@@ -662,6 +688,225 @@ fun OverviewTab(
                                 Text("Invisibly Dim", fontSize = 11.sp, color = ElegantTextSubtle)
                                 Text("Very Clear", fontSize = 11.sp, color = ElegantTextSubtle)
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Screen Lock Type Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, ElegantCardLighter)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Protection Overlay Style",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Transparent Touch Lock (Optimal)", fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                            Text("Keeps the video fully bright & visible under a transparent shield that secures all touches and inputs.", fontSize = 12.sp, color = ElegantTextSubtle)
+                        }
+                        Switch(
+                            checked = useTransparentLock,
+                            onCheckedChange = { viewModel.updateUseTransparentLock(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.testTag("transparent_lock_switch")
+                        )
+                    }
+                }
+            }
+        }
+
+        // App Tint & Dark/Light Theme Settings Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, ElegantCardLighter)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    Text(
+                        text = "App Appearance",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    // Theme selector (Dark vs Light buttons)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Theme Mode",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Dark Theme button
+                            Button(
+                                onClick = { viewModel.updateThemeMode(0) },
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (themeMode == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (themeMode == 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🌙 Dark Theme", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            // Light Theme button
+                            Button(
+                                onClick = { viewModel.updateThemeMode(1) },
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (themeMode == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (themeMode == 1) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("☀️ Light Theme", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = ElegantCardLighter.copy(alpha = 0.5f))
+
+                    // Interface Tint Selector
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Interface Color Accent",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        // Elegant color presets
+                        val presets = listOf(
+                            0xFFD0BCFF, // Indigo / Default Purple
+                            0xFF00C853, // Emerald Green
+                            0xFF00E5FF, // Cyan Surge
+                            0xFFFFA000, // Golden Amber
+                            0xFFFF4081, // Neon Pink
+                            0xFFFF3D00, // Vibrant Crimson
+                            0xFF636AFF, // Electric Blue
+                            0xFFECEFF1  // Slate Silver
+                        )
+                        
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(vertical = 4.dp)
+                        ) {
+                            items(presets) { presetArgb ->
+                                val rgb = Color(presetArgb)
+                                val isSelected = (customThemeColor == presetArgb.toInt())
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(rgb)
+                                        .border(
+                                            width = if (isSelected) 3.dp else 0.dp,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            shape = CircleShape
+                                        )
+                                        .clickable {
+                                            viewModel.updateCustomThemeColor(presetArgb.toInt())
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = "Selected",
+                                            tint = if (presetArgb == 0xFFECEFF1) Color.Black else Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Interactive Custom Color Wheel text and widget
+                        Text(
+                            text = "Interactive Color Wheel (Fine Tune)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = ElegantTextSubtle
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            ColorWheel(
+                                selectedColor = Color(customThemeColor),
+                                onColorSelected = { color ->
+                                    viewModel.updateCustomThemeColor(color.toArgb())
+                                },
+                                modifier = Modifier.size(170.dp)
+                            )
+                        }
+
+                        // Selected Color Value Display
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Selected Accent Hex:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = String.format("#%08X", customThemeColor),
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
                 }
@@ -1229,6 +1474,128 @@ fun HistoryItemRow(history: BlackoutHistory) {
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF4CAF50),
                     fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ColorWheel(
+    selectedColor: Color,
+    onColorSelected: (Color) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var center by remember { mutableStateOf(Offset.Zero) }
+    var radius by remember { mutableStateOf(0f) }
+
+    val hsv = remember(selectedColor) {
+        val outHsv = FloatArray(3)
+        AndroidColor.colorToHSV(selectedColor.toArgb(), outHsv)
+        outHsv
+    }
+    val currentHue = hsv[0]
+    val currentSat = hsv[1]
+
+    val indicatorOffset = remember(currentHue, currentSat, center, radius) {
+        if (radius == 0f) Offset.Zero else {
+            val angleInRad = currentHue * Math.PI / 180.0
+            val r = currentSat * radius
+            Offset(
+                (center.x + r * Math.cos(angleInRad)).toFloat(),
+                (center.y + r * Math.sin(angleInRad)).toFloat()
+            )
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .pointerInput(Unit) {
+                fun updateColor(position: Offset) {
+                    val dx = position.x - center.x
+                    val dy = position.y - center.y
+                    val r = sqrt(dx * dx + dy * dy)
+                    if (radius > 0f) {
+                        val angleInRad = atan2(dy, dx)
+                        var hue = (angleInRad * 180.0 / Math.PI).toFloat()
+                        if (hue < 0) hue += 360f
+                        val sat = (r / radius).coerceIn(0f, 1f)
+                        val rgbInt = AndroidColor.HSVToColor(floatArrayOf(hue, sat, 1f))
+                        onColorSelected(Color(rgbInt))
+                    }
+                }
+
+                detectTapGestures(
+                    onPress = { offset ->
+                        updateColor(offset)
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                detectDragGestures { change, _ ->
+                    change.consume()
+                    val dx = change.position.x - center.x
+                    val dy = change.position.y - center.y
+                    val r = sqrt(dx * dx + dy * dy)
+                    if (radius > 0f) {
+                        val angleInRad = atan2(dy, dx)
+                        var hue = (angleInRad * 180.0 / Math.PI).toFloat()
+                        if (hue < 0) hue += 360f
+                        val sat = (r / radius).coerceIn(0f, 1f)
+                        val rgbInt = AndroidColor.HSVToColor(floatArrayOf(hue, sat, 1f))
+                        onColorSelected(Color(rgbInt))
+                    }
+                }
+            }
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { layoutCoordinates ->
+                    val clSize = layoutCoordinates.size
+                    center = Offset(clSize.width / 2f, clSize.height / 2f)
+                    radius = (clSize.width / 2f) - 16f
+                }
+        ) {
+            val drawRadius = size.width / 2f - 8f
+            
+            val sweepColors = listOf(
+                Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red
+            )
+            drawCircle(
+                brush = Brush.sweepGradient(sweepColors, center),
+                radius = drawRadius,
+                center = center
+            )
+
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color.White, Color.Transparent),
+                    center = center,
+                    radius = drawRadius
+                ),
+                radius = drawRadius,
+                center = center
+            )
+
+            if (indicatorOffset != Offset.Zero) {
+                drawCircle(
+                    color = Color.Black,
+                    radius = 12f,
+                    center = indicatorOffset,
+                    style = Stroke(width = 4f)
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = 10f,
+                    center = indicatorOffset,
+                    style = Stroke(width = 3f)
+                )
+                drawCircle(
+                    color = selectedColor,
+                    radius = 6f,
+                    center = indicatorOffset
                 )
             }
         }

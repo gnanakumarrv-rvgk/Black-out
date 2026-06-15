@@ -66,6 +66,15 @@ class BlackoutViewModel(
     private val _floatingShortcutOpacity = MutableStateFlow(BlackoutOverlayService.DEFAULT_FLOATING_SHORTCUT_OPACITY)
     val floatingShortcutOpacity: StateFlow<Float> = _floatingShortcutOpacity.asStateFlow()
 
+    private val _useTransparentLock = MutableStateFlow(true)
+    val useTransparentLock: StateFlow<Boolean> = _useTransparentLock.asStateFlow()
+
+    private val _themeMode = MutableStateFlow(0)
+    val themeMode: StateFlow<Int> = _themeMode.asStateFlow()
+
+    private val _customThemeColor = MutableStateFlow(0xFFD0BCFF.toInt())
+    val customThemeColor: StateFlow<Int> = _customThemeColor.asStateFlow()
+
     // Current web browser state
     private val _currentUrl = MutableStateFlow("https://m.youtube.com")
     val currentUrl: StateFlow<String> = _currentUrl.asStateFlow()
@@ -91,6 +100,15 @@ class BlackoutViewModel(
         _floatingShortcutOpacity.value = prefs.getFloat(
             BlackoutOverlayService.KEY_FLOATING_SHORTCUT_OPACITY,
             BlackoutOverlayService.DEFAULT_FLOATING_SHORTCUT_OPACITY
+        )
+        _useTransparentLock.value = prefs.getBoolean(
+            BlackoutOverlayService.KEY_LOCK_MODE_TRANSPARENT,
+            true
+        )
+        _themeMode.value = prefs.getInt(BlackoutOverlayService.KEY_THEME_MODE, 0)
+        _customThemeColor.value = prefs.getInt(
+            BlackoutOverlayService.KEY_CUSTOM_THEME_COLOR,
+            0xFFD0BCFF.toInt()
         )
         
         // Register Broadcast Receiver for service status updates
@@ -163,6 +181,21 @@ class BlackoutViewModel(
     fun updateFloatingShortcutOpacity(value: Float) {
         _floatingShortcutOpacity.value = value
         prefs.edit().putFloat(BlackoutOverlayService.KEY_FLOATING_SHORTCUT_OPACITY, value).apply()
+    }
+
+    fun updateUseTransparentLock(enabled: Boolean) {
+        _useTransparentLock.value = enabled
+        prefs.edit().putBoolean(BlackoutOverlayService.KEY_LOCK_MODE_TRANSPARENT, enabled).apply()
+    }
+
+    fun updateThemeMode(mode: Int) {
+        _themeMode.value = mode
+        prefs.edit().putInt(BlackoutOverlayService.KEY_THEME_MODE, mode).apply()
+    }
+
+    fun updateCustomThemeColor(colorArgb: Int) {
+        _customThemeColor.value = colorArgb
+        prefs.edit().putInt(BlackoutOverlayService.KEY_CUSTOM_THEME_COLOR, colorArgb).apply()
     }
 
     private fun restartServiceIfRunning() {

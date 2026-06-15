@@ -10,6 +10,10 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.viewmodel.BlackoutViewModel
 import com.example.viewmodel.BlackoutViewModelFactory
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
+
 class MainActivity : ComponentActivity() {
 
     private val viewModel: BlackoutViewModel by viewModels {
@@ -21,7 +25,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
+            val themeMode by viewModel.themeMode.collectAsState()
+            val customColorInt by viewModel.customThemeColor.collectAsState()
+
+            MyApplicationTheme(
+                themeMode = themeMode,
+                customColor = Color(customColorInt)
+            ) {
                 MainScreen(viewModel = viewModel)
             }
         }
